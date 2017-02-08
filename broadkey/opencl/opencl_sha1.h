@@ -1,0 +1,562 @@
+/*
+ * OpenCL SHA1
+ *
+ * Copyright (c) 2014, magnum
+ * This software is hereby released to the general public under
+ * the following terms: Redistribution and use in source and binary
+ * forms, with or without modification, are permitted.
+ *
+ * NOTICE: After changes in headers, you probably need to drop cached
+ * kernels to ensure the changes take effect.
+ *
+ */
+
+#ifndef _OPENCL_SHA1M_H
+#define _OPENCL_SHA1M_H
+
+#include "opencl_misc.h"
+
+#define USE_SHA1_SHORT 1
+
+#define INIT_A			0x67452301
+#define INIT_B			0xefcdab89
+#define INIT_C			0x98badcfe
+#define INIT_D			0x10325476
+#define INIT_E			0xc3d2e1f0
+
+#define SQRT_2			0x5a827999
+#define SQRT_3			0x6ed9eba1
+
+#define K1			0x5a827999
+#define K2			0x6ed9eba1
+#define K3			0x8f1bbcdc
+#define K4			0xca62c1d6
+
+#if HAVE_LUT3
+#define F1(x, y, z) lut3(x, y, z, 0xca)
+#elif USE_BITSELECT
+#define F1(x, y, z) bitselect(z, y, x)
+#elif HAVE_ANDNOT
+#define F1(x, y, z) ((x & y) ^ ((~x) & z))
+#else
+#define F1(x, y, z) (z ^ (x & (y ^ z)))
+#endif
+
+#if HAVE_LUT3
+#define F2(x, y, z) lut3(x, y, z, 0x96)
+#else
+#define F2(x, y, z) (x ^ y ^ z)
+#endif
+
+#if HAVE_LUT3
+#define F3(x, y, z) lut3(x, y, z, 0xe8)
+#elif USE_BITSELECT
+#define F3(x, y, z) bitselect(x, y, (z) ^ (x))
+#else
+#define F3(x, y, z) ((x & y) | (z & (x | y)))
+#endif
+
+#if HAVE_LUT3
+#define F4(x, y, z) lut3(x, y, z, 0x96)
+#else
+#define F4(x, y, z) (x ^ y ^ z)
+#endif
+
+#define R(t, W)	  \
+	( \
+		temp = W[(t -  3) & 0x0F] ^ W[(t - 8) & 0x0F] ^ \
+		W[(t - 14) & 0x0F] ^ W[ t      & 0x0F], \
+		( W[t & 0x0F] = rotate(temp, 1U) ) \
+		)
+
+#define R2(t, W)	  \
+	( \
+		rotate((W[(t -  3) & 0x0F] ^ W[(t - 8) & 0x0F] ^ \
+		   W[(t - 14) & 0x0F] ^ W[ t      & 0x0F]), 1U) \
+		)
+
+#define P1(a, b, c, d, e, x)	  \
+	{ \
+		e += rotate(a, 5U) + F1(b, c, d) + K1 + x; b = rotate(b, 30U); \
+	}
+
+#define P2(a, b, c, d, e, x)	  \
+	{ \
+		e += rotate(a, 5U) + F2(b, c, d) + K2 + x; b = rotate(b, 30U); \
+	}
+
+#define P3(a, b, c, d, e, x)	  \
+	{ \
+		e += rotate(a, 5U) + F3(b, c, d) + K3 + x; b = rotate(b, 30U); \
+	}
+
+#define P4(a, b, c, d, e, x)	  \
+	{ \
+		e += rotate(a, 5U) + F4(b, c, d) + K4 + x; b = rotate(b, 30U); \
+	}
+
+#define PZ(a, b, c, d, e)	  \
+	{ \
+		e += rotate(a, 5U) + F1(b, c, d) + K1 ; b = rotate(b, 30U); \
+	}
+
+#define SHA1(A, B, C, D, E, W)	  \
+	P1(A, B, C, D, E, W[0] ); \
+	P1(E, A, B, C, D, W[1] ); \
+	P1(D, E, A, B, C, W[2] ); \
+	P1(C, D, E, A, B, W[3] ); \
+	P1(B, C, D, E, A, W[4] ); \
+	P1(A, B, C, D, E, W[5] ); \
+	P1(E, A, B, C, D, W[6] ); \
+	P1(D, E, A, B, C, W[7] ); \
+	P1(C, D, E, A, B, W[8] ); \
+	P1(B, C, D, E, A, W[9] ); \
+	P1(A, B, C, D, E, W[10]); \
+	P1(E, A, B, C, D, W[11]); \
+	P1(D, E, A, B, C, W[12]); \
+	P1(C, D, E, A, B, W[13]); \
+	P1(B, C, D, E, A, W[14]); \
+	P1(A, B, C, D, E, W[15]); \
+	P1(E, A, B, C, D, R(16,W)); \
+	P1(D, E, A, B, C, R(17,W)); \
+	P1(C, D, E, A, B, R(18,W)); \
+	P1(B, C, D, E, A, R(19,W)); \
+	P2(A, B, C, D, E, R(20,W)); \
+	P2(E, A, B, C, D, R(21,W)); \
+	P2(D, E, A, B, C, R(22,W)); \
+	P2(C, D, E, A, B, R(23,W)); \
+	P2(B, C, D, E, A, R(24,W)); \
+	P2(A, B, C, D, E, R(25,W)); \
+	P2(E, A, B, C, D, R(26,W)); \
+	P2(D, E, A, B, C, R(27,W)); \
+	P2(C, D, E, A, B, R(28,W)); \
+	P2(B, C, D, E, A, R(29,W)); \
+	P2(A, B, C, D, E, R(30,W)); \
+	P2(E, A, B, C, D, R(31,W)); \
+	P2(D, E, A, B, C, R(32,W)); \
+	P2(C, D, E, A, B, R(33,W)); \
+	P2(B, C, D, E, A, R(34,W)); \
+	P2(A, B, C, D, E, R(35,W)); \
+	P2(E, A, B, C, D, R(36,W)); \
+	P2(D, E, A, B, C, R(37,W)); \
+	P2(C, D, E, A, B, R(38,W)); \
+	P2(B, C, D, E, A, R(39,W)); \
+	P3(A, B, C, D, E, R(40,W)); \
+	P3(E, A, B, C, D, R(41,W)); \
+	P3(D, E, A, B, C, R(42,W)); \
+	P3(C, D, E, A, B, R(43,W)); \
+	P3(B, C, D, E, A, R(44,W)); \
+	P3(A, B, C, D, E, R(45,W)); \
+	P3(E, A, B, C, D, R(46,W)); \
+	P3(D, E, A, B, C, R(47,W)); \
+	P3(C, D, E, A, B, R(48,W)); \
+	P3(B, C, D, E, A, R(49,W)); \
+	P3(A, B, C, D, E, R(50,W)); \
+	P3(E, A, B, C, D, R(51,W)); \
+	P3(D, E, A, B, C, R(52,W)); \
+	P3(C, D, E, A, B, R(53,W)); \
+	P3(B, C, D, E, A, R(54,W)); \
+	P3(A, B, C, D, E, R(55,W)); \
+	P3(E, A, B, C, D, R(56,W)); \
+	P3(D, E, A, B, C, R(57,W)); \
+	P3(C, D, E, A, B, R(58,W)); \
+	P3(B, C, D, E, A, R(59,W)); \
+	P4(A, B, C, D, E, R(60,W)); \
+	P4(E, A, B, C, D, R(61,W)); \
+	P4(D, E, A, B, C, R(62,W)); \
+	P4(C, D, E, A, B, R(63,W)); \
+	P4(B, C, D, E, A, R(64,W)); \
+	P4(A, B, C, D, E, R(65,W)); \
+	P4(E, A, B, C, D, R(66,W)); \
+	P4(D, E, A, B, C, R(67,W)); \
+	P4(C, D, E, A, B, R(68,W)); \
+	P4(B, C, D, E, A, R(69,W)); \
+	P4(A, B, C, D, E, R(70,W)); \
+	P4(E, A, B, C, D, R(71,W)); \
+	P4(D, E, A, B, C, R(72,W)); \
+	P4(C, D, E, A, B, R(73,W)); \
+	P4(B, C, D, E, A, R(74,W)); \
+	P4(A, B, C, D, E, R(75,W)); \
+	P4(E, A, B, C, D, R(76,W)); \
+	P4(D, E, A, B, C, R(77,W)); \
+	P4(C, D, E, A, B, R(78,W)); \
+	P4(B, C, D, E, A, R(79,W));
+
+#define SHA1_192Z_BEG(A, B, C, D, E, W)	  \
+	P1(A, B, C, D, E, W[0]); \
+	P1(E, A, B, C, D, W[1]); \
+	P1(D, E, A, B, C, W[2]); \
+	P1(C, D, E, A, B, W[3]); \
+	P1(B, C, D, E, A, W[4]); \
+	P1(A, B, C, D, E, W[5]); \
+	P1(E, A, B, C, D, W[6]); \
+	PZ(D, E, A, B, C); \
+	PZ(C, D, E, A, B); \
+	PZ(B, C, D, E, A); \
+	PZ(A, B, C, D, E); \
+	PZ(E, A, B, C, D); \
+	PZ(D, E, A, B, C); \
+	PZ(C, D, E, A, B); \
+	PZ(B, C, D, E, A); \
+	P1(A, B, C, D, E, W[15]);
+
+// Q16 temp = W[13] ^ W[8] ^ W[2] ^ W[0], ( W[0] = rotate(temp, 1) )
+// Q17 temp = W[14] ^ W[9] ^ W[3] ^ W[1], ( W[1] = rotate(temp, 1) )
+// Q18 temp = W[15] ^ W[10] ^ W[4] ^ W[2], ( W[2] = rotate(temp, 1) )
+// Q19 temp = W[0] ^ W[11] ^ W[5] ^ W[3], ( W[3] = rotate(temp, 1) )
+// Q20 temp = W[1] ^ W[12] ^ W[6] ^ W[4], ( W[4] = rotate(temp, 1) )
+// Q21 temp = W[2] ^ W[13] ^ W[7] ^ W[5], ( W[5] = rotate(temp, 1) )
+// Q22 temp = W[3] ^ W[14] ^ W[8] ^ W[6], ( W[6] = rotate(temp, 1) )
+// Q23 temp = W[4] ^ W[15] ^ W[9] ^ W[7], ( W[7] = rotate(temp, 1) )
+// Q24 temp = W[5] ^ W[0] ^ W[10] ^ W[8], ( W[8] = rotate(temp, 1) )
+// Q25 temp = W[6] ^ W[1] ^ W[11] ^ W[9], ( W[9] = rotate(temp, 1) )
+// Q26 temp = W[7] ^ W[2] ^ W[12] ^ W[10], ( W[10] = rotate(temp, 1) )
+// Q27 temp = W[8] ^ W[3] ^ W[13] ^ W[11], ( W[11] = rotate(temp, 1) )
+// Q28 temp = W[9] ^ W[4] ^ W[14] ^ W[12], ( W[12] = rotate(temp, 1) )
+// Q29 temp = W[10] ^ W[5] ^ W[15] ^ W[13], ( W[13] = rotate(temp, 1) )
+// Q30 temp = W[11] ^ W[6] ^ W[0] ^ W[14], ( W[14] = rotate(temp, 1) )
+
+#define Q16(W) (W[0] = rotate((W[2] ^ W[0]), 1U))
+#define Q17(W) (W[1] = rotate((W[3] ^ W[1]), 1U))
+#define Q18(W) (W[2] = rotate((W[15] ^ W[4] ^ W[2]), 1U))
+#define Q19(W) (W[3] = rotate((W[0]  ^ W[5] ^ W[3]), 1U))
+#define Q20(W) (W[4] = rotate((W[1] ^ W[6] ^ W[4]), 1U))
+#define Q21(W) (W[5] = rotate((W[2] ^ W[5]), 1U))
+#define Q22(W) (W[6] = rotate(W[3] ^ W[6], 1U))
+#define Q23(W) (W[7] = rotate((W[4] ^ W[15]), 1U))
+#define Q24(W) (W[8] = rotate((W[5] ^ W[0]), 1U))
+#define Q25(W) (W[9] = rotate((W[6] ^ W[1]), 1U))
+#define Q26(W) (W[10] = rotate((W[7] ^ W[2]), 1U))
+#define Q27(W) (W[11] = rotate((W[8] ^ W[3]), 1U))
+#define Q28(W) (W[12] = rotate((W[9] ^ W[4]), 1U))
+#define Q29(W) (W[13] = rotate((W[10] ^ W[5] ^ W[15]), 1U))
+#define Q30(W) (W[14] = rotate((W[11] ^ W[6] ^ W[0]), 1U))
+
+#define SHA1_192Z_END(A, B, C, D, E, W)	  \
+	P1(E, A, B, C, D, Q16(W)); \
+	P1(D, E, A, B, C, Q17(W)); \
+	P1(C, D, E, A, B, Q18(W)); \
+	P1(B, C, D, E, A, Q19(W)); \
+	P2(A, B, C, D, E, Q20(W)); \
+	P2(E, A, B, C, D, Q21(W)); \
+	P2(D, E, A, B, C, Q22(W)); \
+	P2(C, D, E, A, B, Q23(W)); \
+	P2(B, C, D, E, A, Q24(W)); \
+	P2(A, B, C, D, E, Q25(W)); \
+	P2(E, A, B, C, D, Q26(W)); \
+	P2(D, E, A, B, C, Q27(W)); \
+	P2(C, D, E, A, B, Q28(W)); \
+	P2(B, C, D, E, A, Q29(W)); \
+	P2(A, B, C, D, E, Q30(W)); \
+	P2(E, A, B, C, D, R(31,W)); \
+	P2(D, E, A, B, C, R(32,W)); \
+	P2(C, D, E, A, B, R(33,W)); \
+	P2(B, C, D, E, A, R(34,W)); \
+	P2(A, B, C, D, E, R(35,W)); \
+	P2(E, A, B, C, D, R(36,W)); \
+	P2(D, E, A, B, C, R(37,W)); \
+	P2(C, D, E, A, B, R(38,W)); \
+	P2(B, C, D, E, A, R(39,W)); \
+	P3(A, B, C, D, E, R(40,W)); \
+	P3(E, A, B, C, D, R(41,W)); \
+	P3(D, E, A, B, C, R(42,W)); \
+	P3(C, D, E, A, B, R(43,W)); \
+	P3(B, C, D, E, A, R(44,W)); \
+	P3(A, B, C, D, E, R(45,W)); \
+	P3(E, A, B, C, D, R(46,W)); \
+	P3(D, E, A, B, C, R(47,W)); \
+	P3(C, D, E, A, B, R(48,W)); \
+	P3(B, C, D, E, A, R(49,W)); \
+	P3(A, B, C, D, E, R(50,W)); \
+	P3(E, A, B, C, D, R(51,W)); \
+	P3(D, E, A, B, C, R(52,W)); \
+	P3(C, D, E, A, B, R(53,W)); \
+	P3(B, C, D, E, A, R(54,W)); \
+	P3(A, B, C, D, E, R(55,W)); \
+	P3(E, A, B, C, D, R(56,W)); \
+	P3(D, E, A, B, C, R(57,W)); \
+	P3(C, D, E, A, B, R(58,W)); \
+	P3(B, C, D, E, A, R(59,W)); \
+	P4(A, B, C, D, E, R(60,W)); \
+	P4(E, A, B, C, D, R(61,W)); \
+	P4(D, E, A, B, C, R(62,W)); \
+	P4(C, D, E, A, B, R(63,W)); \
+	P4(B, C, D, E, A, R(64,W)); \
+	P4(A, B, C, D, E, R(65,W)); \
+	P4(E, A, B, C, D, R(66,W)); \
+	P4(D, E, A, B, C, R(67,W)); \
+	P4(C, D, E, A, B, R(68,W)); \
+	P4(B, C, D, E, A, R(69,W)); \
+	P4(A, B, C, D, E, R(70,W)); \
+	P4(E, A, B, C, D, R(71,W)); \
+	P4(D, E, A, B, C, R(72,W)); \
+	P4(C, D, E, A, B, R(73,W)); \
+	P4(B, C, D, E, A, R(74,W)); \
+	P4(A, B, C, D, E, R(75,W)); \
+	P4(E, A, B, C, D, R(76,W)); \
+	P4(D, E, A, B, C, R2(77,W)); \
+	P4(C, D, E, A, B, R2(78,W)); \
+	P4(B, C, D, E, A, R2(79,W));
+
+#define SHA1_160Z_BEG(A, B, C, D, E, W)	  \
+	P1(A, B, C, D, E, W[0]); \
+	P1(E, A, B, C, D, W[1]); \
+	P1(D, E, A, B, C, W[2]); \
+	P1(C, D, E, A, B, W[3]); \
+	P1(B, C, D, E, A, W[4]); \
+	P1(A, B, C, D, E, W[5]); \
+	PZ(E, A, B, C, D); \
+	PZ(D, E, A, B, C); \
+	PZ(C, D, E, A, B); \
+	PZ(B, C, D, E, A); \
+	PZ(A, B, C, D, E); \
+	PZ(E, A, B, C, D); \
+	PZ(D, E, A, B, C); \
+	PZ(C, D, E, A, B); \
+	PZ(B, C, D, E, A); \
+	P1(A, B, C, D, E, W[15]);
+
+// Q16 temp = W[13] ^ W[8] ^ W[2] ^ W[0], ( W[0] = rotate(temp, 1) )
+// Q17 temp = W[14] ^ W[9] ^ W[3] ^ W[1], ( W[1] = rotate(temp, 1) )
+// Q18 temp = W[15] ^ W[10] ^ W[4] ^ W[2], ( W[2] = rotate(temp, 1) )
+// Q19 temp = W[0] ^ W[11] ^ W[5] ^ W[3], ( W[3] = rotate(temp, 1) )
+// Q20 temp = W[1] ^ W[12] ^ W[6] ^ W[4], ( W[4] = rotate(temp, 1) )
+// Q21 temp = W[2] ^ W[13] ^ W[7] ^ W[5], ( W[5] = rotate(temp, 1) )
+// Q22 temp = W[3] ^ W[14] ^ W[8] ^ W[6], ( W[6] = rotate(temp, 1) )
+// Q23 temp = W[4] ^ W[15] ^ W[9] ^ W[7], ( W[7] = rotate(temp, 1) )
+// Q24 temp = W[5] ^ W[0] ^ W[10] ^ W[8], ( W[8] = rotate(temp, 1) )
+// Q25 temp = W[6] ^ W[1] ^ W[11] ^ W[9], ( W[9] = rotate(temp, 1) )
+// Q26 temp = W[7] ^ W[2] ^ W[12] ^ W[10], ( W[10] = rotate(temp, 1) )
+// Q27 temp = W[8] ^ W[3] ^ W[13] ^ W[11], ( W[11] = rotate(temp, 1) )
+// Q28 temp = W[9] ^ W[4] ^ W[14] ^ W[12], ( W[12] = rotate(temp, 1) )
+// Q29 temp = W[10] ^ W[5] ^ W[15] ^ W[13], ( W[13] = rotate(temp, 1) )
+// Q30 temp = W[11] ^ W[6] ^ W[0] ^ W[14], ( W[14] = rotate(temp, 1) )
+
+#define Q20_160(W) (W[4] = rotate((W[1] ^ W[4]), 1U))
+#define Q22_160(W) (W[6] = rotate(W[3], 1U))
+
+#define SHA1_160Z_END(A, B, C, D, E, W)	  \
+	P1(E, A, B, C, D, Q16(W)); \
+	P1(D, E, A, B, C, Q17(W)); \
+	P1(C, D, E, A, B, Q18(W)); \
+	P1(B, C, D, E, A, Q19(W)); \
+	P2(A, B, C, D, E, Q20_160(W)); \
+	P2(E, A, B, C, D, Q21(W)); \
+	P2(D, E, A, B, C, Q22_160(W)); \
+	P2(C, D, E, A, B, Q23(W)); \
+	P2(B, C, D, E, A, Q24(W)); \
+	P2(A, B, C, D, E, Q25(W)); \
+	P2(E, A, B, C, D, Q26(W)); \
+	P2(D, E, A, B, C, Q27(W)); \
+	P2(C, D, E, A, B, Q28(W)); \
+	P2(B, C, D, E, A, Q29(W)); \
+	P2(A, B, C, D, E, Q30(W)); \
+	P2(E, A, B, C, D, R(31,W)); \
+	P2(D, E, A, B, C, R(32,W)); \
+	P2(C, D, E, A, B, R(33,W)); \
+	P2(B, C, D, E, A, R(34,W)); \
+	P2(A, B, C, D, E, R(35,W)); \
+	P2(E, A, B, C, D, R(36,W)); \
+	P2(D, E, A, B, C, R(37,W)); \
+	P2(C, D, E, A, B, R(38,W)); \
+	P2(B, C, D, E, A, R(39,W)); \
+	P3(A, B, C, D, E, R(40,W)); \
+	P3(E, A, B, C, D, R(41,W)); \
+	P3(D, E, A, B, C, R(42,W)); \
+	P3(C, D, E, A, B, R(43,W)); \
+	P3(B, C, D, E, A, R(44,W)); \
+	P3(A, B, C, D, E, R(45,W)); \
+	P3(E, A, B, C, D, R(46,W)); \
+	P3(D, E, A, B, C, R(47,W)); \
+	P3(C, D, E, A, B, R(48,W)); \
+	P3(B, C, D, E, A, R(49,W)); \
+	P3(A, B, C, D, E, R(50,W)); \
+	P3(E, A, B, C, D, R(51,W)); \
+	P3(D, E, A, B, C, R(52,W)); \
+	P3(C, D, E, A, B, R(53,W)); \
+	P3(B, C, D, E, A, R(54,W)); \
+	P3(A, B, C, D, E, R(55,W)); \
+	P3(E, A, B, C, D, R(56,W)); \
+	P3(D, E, A, B, C, R(57,W)); \
+	P3(C, D, E, A, B, R(58,W)); \
+	P3(B, C, D, E, A, R(59,W)); \
+	P4(A, B, C, D, E, R(60,W)); \
+	P4(E, A, B, C, D, R(61,W)); \
+	P4(D, E, A, B, C, R(62,W)); \
+	P4(C, D, E, A, B, R(63,W)); \
+	P4(B, C, D, E, A, R(64,W)); \
+	P4(A, B, C, D, E, R(65,W)); \
+	P4(E, A, B, C, D, R(66,W)); \
+	P4(D, E, A, B, C, R(67,W)); \
+	P4(C, D, E, A, B, R(68,W)); \
+	P4(B, C, D, E, A, R(69,W)); \
+	P4(A, B, C, D, E, R(70,W)); \
+	P4(E, A, B, C, D, R(71,W)); \
+	P4(D, E, A, B, C, R(72,W)); \
+	P4(C, D, E, A, B, R(73,W)); \
+	P4(B, C, D, E, A, R(74,W)); \
+	P4(A, B, C, D, E, R(75,W)); \
+	P4(E, A, B, C, D, R(76,W)); \
+	P4(D, E, A, B, C, R2(77,W)); \
+	P4(C, D, E, A, B, R2(78,W)); \
+	P4(B, C, D, E, A, R2(79,W));
+
+#define SHA1_160Z(A, B, C, D, E, W) SHA1_160Z_BEG(A, B, C, D, E, W) SHA1_160Z_END(A, B, C, D, E, W)
+
+#define SHA1_192Z(A, B, C, D, E, W) SHA1_192Z_BEG(A, B, C, D, E, W) SHA1_192Z_END(A, B, C, D, E, W)
+
+#define sha1_init(ctx) {	  \
+		ctx[0] = INIT_A; \
+		ctx[1] = INIT_B; \
+		ctx[2] = INIT_C; \
+		ctx[3] = INIT_D; \
+		ctx[4] = INIT_E; \
+	}
+
+/*
+ * The extra a, b, c, d, e variables are a workaround for a really silly
+ * AMD bug (seen in eg. Catalyst 14.9). We should really do without them
+ * but somehow we get thrashed output without them.
+ * On the other hand, they also seem to work as an optimization for nvidia!
+ *
+ * Intel doesn't support typeof() but also doesn't need the workaround.
+ */
+#if !(DEVICE_INFO & DEV_INTEL)
+#define sha1_block(W, ctx) {	\
+		typeof(A) a, b, c, d, e; \
+		A = ctx[0]; \
+		B = ctx[1]; \
+		C = ctx[2]; \
+		D = ctx[3]; \
+		E = ctx[4]; \
+		a=A, b=B, c=C, d=D, e=E; \
+		SHA1(A, B, C, D, E, W); \
+		ctx[0] = a + A; \
+		ctx[1] = b + B; \
+		ctx[2] = c + C; \
+		ctx[3] = d + D; \
+		ctx[4] = e + E; \
+	}
+#else
+#define sha1_block(W, ctx) {	\
+		A = ctx[0]; \
+		B = ctx[1]; \
+		C = ctx[2]; \
+		D = ctx[3]; \
+		E = ctx[4]; \
+		SHA1(A, B, C, D, E, W); \
+		ctx[0] += A; \
+		ctx[1] += B; \
+		ctx[2] += C; \
+		ctx[3] += D; \
+		ctx[4] += E; \
+	}
+#endif
+
+#define sha1_single(W, out) {	\
+		A = INIT_A; \
+		B = INIT_B; \
+		C = INIT_C; \
+		D = INIT_D; \
+		E = INIT_E; \
+		SHA1(A, B, C, D, E, W); \
+		out[0] = A + INIT_A; \
+		out[1] = B + INIT_B; \
+		out[2] = C + INIT_C; \
+		out[3] = D + INIT_D; \
+		out[4] = E + INIT_E; \
+	}
+
+#if 1 /* DEV_VER_MAJOR == 1573 && DEV_VER_MINOR == 4 */
+#define sha1_block_160Z(W, ctx) {	\
+		MAYBE_VECTOR_UINT a, b, c, d, e; \
+		A = ctx[0]; \
+		B = ctx[1]; \
+		C = ctx[2]; \
+		D = ctx[3]; \
+		E = ctx[4]; \
+		a=A, b=B, c=C, d=D, e=E; \
+		SHA1_160Z(A, B, C, D, E, W); \
+		ctx[0] = a + A; \
+		ctx[1] = b + B; \
+		ctx[2] = c + C; \
+		ctx[3] = d + D; \
+		ctx[4] = e + E; \
+	}
+#else
+#define sha1_block_160Z(W, ctx) {	\
+		A = ctx[0]; \
+		B = ctx[1]; \
+		C = ctx[2]; \
+		D = ctx[3]; \
+		E = ctx[4]; \
+		SHA1_160Z(A, B, C, D, E, W); \
+		ctx[0] += A; \
+		ctx[1] += B; \
+		ctx[2] += C; \
+		ctx[3] += D; \
+		ctx[4] += E; \
+	}
+#endif
+
+#define sha1_single_160Z(W, out) {	\
+		A = INIT_A; \
+		B = INIT_B; \
+		C = INIT_C; \
+		D = INIT_D; \
+		E = INIT_E; \
+		SHA1_160Z(A, B, C, D, E, W); \
+		out[0] = A + INIT_A; \
+		out[1] = B + INIT_B; \
+		out[2] = C + INIT_C; \
+		out[3] = D + INIT_D; \
+		out[4] = E + INIT_E; \
+	}
+
+#if 1 /* DEV_VER_MAJOR == 1573 && DEV_VER_MINOR == 4 */
+#define sha1_block_192Z(W, ctx) {	\
+		MAYBE_VECTOR_UINT a, b, c, d, e; \
+		A = ctx[0]; \
+		B = ctx[1]; \
+		C = ctx[2]; \
+		D = ctx[3]; \
+		E = ctx[4]; \
+		a=A, b=B, c=C, d=D, e=E; \
+		SHA1_192Z(A, B, C, D, E, W); \
+		ctx[0] = a + A; \
+		ctx[1] = b + B; \
+		ctx[2] = c + C; \
+		ctx[3] = d + D; \
+		ctx[4] = e + E; \
+	}
+#else
+#define sha1_block_192Z(W, ctx) {	\
+		A = ctx[0]; \
+		B = ctx[1]; \
+		C = ctx[2]; \
+		D = ctx[3]; \
+		E = ctx[4]; \
+		SHA1_192Z(A, B, C, D, E, W); \
+		ctx[0] += A; \
+		ctx[1] += B; \
+		ctx[2] += C; \
+		ctx[3] += D; \
+		ctx[4] += E; \
+	}
+#endif
+
+#define sha1_single_192Z(W, out) {	\
+		A = INIT_A; \
+		B = INIT_B; \
+		C = INIT_C; \
+		D = INIT_D; \
+		E = INIT_E; \
+		SHA1_192Z(A, B, C, D, E, W); \
+		out[0] = A + INIT_A; \
+		out[1] = B + INIT_B; \
+		out[2] = C + INIT_C; \
+		out[3] = D + INIT_D; \
+		out[4] = E + INIT_E; \
+	}
+
+#endif /* _OPENCL_SHA1M_H */
